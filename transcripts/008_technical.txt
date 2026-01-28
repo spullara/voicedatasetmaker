@@ -1,0 +1,1 @@
+The API endpoint returns JSON data with a 200 status code when the request is successful.
