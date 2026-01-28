@@ -296,9 +296,20 @@ class AudioRecorder: NSObject, ObservableObject {
         levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
 
-            self.levelLock.lock()
-            let level = self.currentRMSLevel
-            self.levelLock.unlock()
+            let level: Float
+            if self.audioPlayer?.isPlaying == true {
+                // Playback mode: get levels from AVAudioPlayer
+                self.audioPlayer?.updateMeters()
+                let dB = self.audioPlayer?.averagePower(forChannel: 0) ?? -160.0
+                // Convert dB to linear (0.0-1.0): pow(10, dB / 20), then clamp
+                let linear = pow(10.0, dB / 20.0)
+                level = max(0.0, min(1.0, linear))
+            } else {
+                // Recording mode: use the RMS level from the audio buffer
+                self.levelLock.lock()
+                level = self.currentRMSLevel
+                self.levelLock.unlock()
+            }
 
             DispatchQueue.main.async {
                 self.audioLevel = level
@@ -314,17 +325,21 @@ class AudioRecorder: NSObject, ObservableObject {
     
     func playRecording(from url: URL, completion: @escaping () -> Void) throws {
         stopPlaying()
-        
+
         audioPlayer = try AVAudioPlayer(contentsOf: url)
+        audioPlayer?.isMeteringEnabled = true
         audioPlayer?.delegate = self
         playbackCompletion = completion
         audioPlayer?.play()
+        startLevelTimer()
     }
     
     func stopPlaying() {
+        stopLevelTimer()
         audioPlayer?.stop()
         audioPlayer = nil
         playbackCompletion = nil
+        audioLevel = 0.0
     }
 }
 
