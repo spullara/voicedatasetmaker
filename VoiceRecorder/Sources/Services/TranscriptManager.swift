@@ -10,30 +10,58 @@ class TranscriptManager {
     var recordingsURL: URL {
         baseURL.appendingPathComponent("recordings")
     }
-    
+
     init(baseURL: URL) {
         self.baseURL = baseURL
+    }
+
+    func voiceRecordingsURL(voiceName: String) -> URL {
+        recordingsURL.appendingPathComponent(voiceName)
+    }
+
+    func referenceRecordingURL(voiceName: String) -> URL {
+        voiceRecordingsURL(voiceName: voiceName).appendingPathComponent("ref.wav")
     }
     
     func loadTranscripts(voiceName: String) throws -> [Transcript] {
         // Create transcripts directory if it doesn't exist
         try FileManager.default.createDirectory(at: transcriptsURL, withIntermediateDirectories: true)
-        
+
         let files = try FileManager.default.contentsOfDirectory(at: transcriptsURL, includingPropertiesForKeys: nil)
         let txtFiles = files.filter { $0.pathExtension.lowercased() == "txt" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        
+
         let voiceRecordingsURL = recordingsURL.appendingPathComponent(voiceName)
-        
+
+        // Get list of existing recordings for fallback matching
+        let existingRecordings: Set<String>
+        if let recordingFiles = try? FileManager.default.contentsOfDirectory(at: voiceRecordingsURL, includingPropertiesForKeys: nil) {
+            existingRecordings = Set(recordingFiles.map { $0.lastPathComponent.lowercased() })
+        } else {
+            existingRecordings = []
+        }
+
         return try txtFiles.enumerated().map { index, url in
             let text = try String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             let filename = url.lastPathComponent
             let baseName = (filename as NSString).deletingPathExtension
-            
-            // Format filename with zero-padded index
+
+            // Format filename with zero-padded index (primary format)
             let formattedName = String(format: "%03d_%@", index + 1, baseName)
             let wavURL = voiceRecordingsURL.appendingPathComponent("\(formattedName).wav")
-            let isRecorded = FileManager.default.fileExists(atPath: wavURL.path)
-            
+            var isRecorded = FileManager.default.fileExists(atPath: wavURL.path)
+
+            // Fallback: check for recordings matching just the base name (without numbered prefix)
+            if !isRecorded {
+                let baseNameWav = "\(baseName).wav".lowercased()
+                isRecorded = existingRecordings.contains(baseNameWav)
+            }
+
+            // Fallback: check for any recording containing the base name
+            if !isRecorded {
+                let baseNameLower = baseName.lowercased()
+                isRecorded = existingRecordings.contains { $0.contains(baseNameLower) && $0.hasSuffix(".wav") }
+            }
+
             return Transcript(filename: filename, text: text, isRecorded: isRecorded)
         }
     }

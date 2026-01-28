@@ -2,24 +2,32 @@ import SwiftUI
 
 struct RecordingView: View {
     @EnvironmentObject var appState: AppState
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
             headerView
-            
+
             Divider()
-            
+
             // Transcript display
             transcriptView
-            
+
             Divider()
-            
+
             // Controls
             controlsView
+
+            Divider()
+
+            // Footer with additional actions
+            footerView
         }
         .sheet(isPresented: $appState.showingAddTranscript) {
             AddTranscriptView()
+        }
+        .onAppear {
+            appState.checkReferenceRecording()
         }
     }
     
@@ -32,9 +40,9 @@ struct RecordingView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
-            
+
             Spacer()
-            
+
             HStack(spacing: 8) {
                 Circle()
                     .fill(appState.currentTranscript?.isRecorded == true ? Color.green : Color.gray)
@@ -43,12 +51,40 @@ struct RecordingView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
+
+            // Reference Voice Recording
+            referenceVoiceButton
+
             Button(action: { appState.showingAddTranscript = true }) {
                 Label("Add", systemImage: "plus")
             }
         }
         .padding()
+    }
+
+    private var referenceVoiceButton: some View {
+        HStack(spacing: 4) {
+            Button(action: toggleReferenceRecording) {
+                Label(appState.isRecordingReference ? "Stop" : "Ref Voice",
+                      systemImage: appState.isRecordingReference ? "stop.circle.fill" : "waveform")
+                    .foregroundColor(appState.isRecordingReference ? .red : .primary)
+            }
+            .buttonStyle(.bordered)
+            .tint(appState.isRecordingReference ? .red : nil)
+            .disabled(appState.isRecording || appState.isPlaying)
+
+            if appState.hasReferenceRecording {
+                Button(action: appState.playReferenceRecording) {
+                    Image(systemName: appState.isPlaying ? "stop.fill" : "play.fill")
+                }
+                .buttonStyle(.bordered)
+                .disabled(appState.isRecording || appState.isRecordingReference)
+
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 8, height: 8)
+            }
+        }
     }
     
     private var transcriptView: some View {
@@ -120,6 +156,27 @@ struct RecordingView: View {
         .padding()
     }
     
+    private var footerView: some View {
+        HStack {
+            // Download button
+            Button(action: appState.downloadAsZip) {
+                Label("Download ZIP", systemImage: "arrow.down.doc.fill")
+            }
+            .buttonStyle(.bordered)
+            .disabled(appState.isRecording || appState.isRecordingReference)
+
+            Spacer()
+
+            // Exit button
+            Button(action: appState.exitApp) {
+                Label("Finish & Exit", systemImage: "xmark.circle.fill")
+            }
+            .buttonStyle(.bordered)
+            .tint(appState.allTranscriptsRecorded ? .green : nil)
+        }
+        .padding()
+    }
+
     private func toggleRecording() {
         if appState.isRecording {
             appState.stopRecording()
@@ -127,12 +184,20 @@ struct RecordingView: View {
             appState.startRecording()
         }
     }
-    
+
     private func togglePlayback() {
         if appState.isPlaying {
             appState.stopPlaying()
         } else {
             appState.playRecording()
+        }
+    }
+
+    private func toggleReferenceRecording() {
+        if appState.isRecordingReference {
+            appState.stopRecordingReference()
+        } else {
+            appState.startRecordingReference()
         }
     }
 }

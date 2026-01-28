@@ -83,6 +83,7 @@ struct VoiceNameView: View {
         guard let url = baseURL else { return }
         appState.setupManagers(baseURL: url)
         appState.loadTranscripts()
+        appState.checkReferenceRecording()
         appState.isVoiceNameSet = true
     }
 }

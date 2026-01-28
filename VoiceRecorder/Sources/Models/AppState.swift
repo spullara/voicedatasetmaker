@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 
 @MainActor
 class AppState: ObservableObject {
@@ -13,7 +14,9 @@ class AppState: ObservableObject {
     @Published var showingAddTranscript: Bool = false
     @Published var newTranscriptText: String = ""
     @Published var newTranscriptName: String = ""
-    
+    @Published var isRecordingReference: Bool = false
+    @Published var hasReferenceRecording: Bool = false
+
     var transcriptManager: TranscriptManager?
     var audioRecorder: AudioRecorder?
     
@@ -31,9 +34,19 @@ class AppState: ObservableObject {
         transcripts.filter { $0.isRecorded }.count
     }
     
+    var allTranscriptsRecorded: Bool {
+        !transcripts.isEmpty && transcripts.allSatisfy { $0.isRecorded }
+    }
+
     func setupManagers(baseURL: URL) {
         transcriptManager = TranscriptManager(baseURL: baseURL)
         audioRecorder = AudioRecorder()
+    }
+
+    func checkReferenceRecording() {
+        guard let manager = transcriptManager else { return }
+        let refURL = manager.referenceRecordingURL(voiceName: voiceName)
+        hasReferenceRecording = FileManager.default.fileExists(atPath: refURL.path)
     }
     
     func loadTranscripts() {
@@ -121,7 +134,7 @@ class AppState: ObservableObject {
             errorMessage = "Please enter both name and text"
             return
         }
-        
+
         do {
             let transcript = try manager.addNewTranscript(name: newTranscriptName, text: newTranscriptText)
             transcripts.append(transcript)
@@ -132,6 +145,106 @@ class AppState: ObservableObject {
         } catch {
             errorMessage = "Failed to add transcript: \(error.localizedDescription)"
         }
+    }
+
+    // MARK: - Reference Voice Recording
+
+    func startRecordingReference() {
+        guard let recorder = audioRecorder, let manager = transcriptManager else { return }
+
+        let refURL = manager.referenceRecordingURL(voiceName: voiceName)
+        do {
+            try recorder.startRecording(to: refURL)
+            isRecordingReference = true
+        } catch {
+            errorMessage = "Failed to start reference recording: \(error.localizedDescription)"
+        }
+    }
+
+    func stopRecordingReference() {
+        guard let recorder = audioRecorder else { return }
+
+        recorder.stopRecording()
+        isRecordingReference = false
+        hasReferenceRecording = true
+    }
+
+    func playReferenceRecording() {
+        guard let recorder = audioRecorder, let manager = transcriptManager else { return }
+
+        let refURL = manager.referenceRecordingURL(voiceName: voiceName)
+        guard FileManager.default.fileExists(atPath: refURL.path) else {
+            errorMessage = "No reference recording found"
+            return
+        }
+
+        do {
+            try recorder.playRecording(from: refURL) { [weak self] in
+                Task { @MainActor in
+                    self?.isPlaying = false
+                }
+            }
+            isPlaying = true
+        } catch {
+            errorMessage = "Failed to play reference: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Download as ZIP
+
+    func downloadAsZip() {
+        guard let manager = transcriptManager else { return }
+
+        let voiceDir = manager.voiceRecordingsURL(voiceName: voiceName)
+
+        guard FileManager.default.fileExists(atPath: voiceDir.path) else {
+            errorMessage = "No recordings directory found"
+            return
+        }
+
+        let savePanel = NSSavePanel()
+        savePanel.title = "Save Recordings ZIP"
+        savePanel.nameFieldStringValue = "\(voiceName).zip"
+        savePanel.allowedContentTypes = [.zip]
+        savePanel.canCreateDirectories = true
+
+        savePanel.begin { [weak self] response in
+            guard response == .OK, let destURL = savePanel.url else { return }
+
+            Task { @MainActor in
+                self?.createZipArchive(from: voiceDir, to: destURL)
+            }
+        }
+    }
+
+    private func createZipArchive(from sourceDir: URL, to destURL: URL) {
+        // Remove existing file if present
+        try? FileManager.default.removeItem(at: destURL)
+
+        // Use ditto command to create ZIP archive (reliable on macOS)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = ["-c", "-k", "--sequesterRsrc", "--keepParent", sourceDir.path, destURL.path]
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            if process.terminationStatus == 0 {
+                // Success - open the destination folder in Finder
+                NSWorkspace.shared.selectFile(destURL.path, inFileViewerRootedAtPath: destURL.deletingLastPathComponent().path)
+            } else {
+                errorMessage = "Failed to create ZIP archive"
+            }
+        } catch {
+            errorMessage = "Failed to create ZIP: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Exit App
+
+    func exitApp() {
+        NSApplication.shared.terminate(nil)
     }
 }
 
