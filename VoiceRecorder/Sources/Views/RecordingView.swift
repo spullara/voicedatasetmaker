@@ -250,16 +250,24 @@ struct RecordingView: View {
                     Circle()
                         .fill(Color.red)
                         .frame(width: 8, height: 8)
-                        .opacity(appState.isRecording || appState.isRecordingReference ? 1.0 : 0.0)
                     Text("Recording...")
                         .font(.caption)
                         .foregroundColor(.red)
+                }
+            } else if appState.isPlaying {
+                HStack {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 8, height: 8)
+                    Text("Playing...")
+                        .font(.caption)
+                        .foregroundColor(.green)
                 }
             }
 
             WaveformView(
                 audioLevel: appState.audioLevel,
-                isActive: appState.isRecording || appState.isRecordingReference
+                isActive: appState.isRecording || appState.isRecordingReference || appState.isPlaying
             )
         }
         .padding(.horizontal)
