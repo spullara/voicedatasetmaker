@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import AppKit
+import CoreAudio
 
 @MainActor
 class AppState: ObservableObject {
@@ -17,8 +18,21 @@ class AppState: ObservableObject {
     @Published var isRecordingReference: Bool = false
     @Published var hasReferenceRecording: Bool = false
 
+    /// Currently selected audio input device
+    @Published var selectedDevice: AudioInputDevice?
+
     var transcriptManager: TranscriptManager?
     var audioRecorder: AudioRecorder?
+
+    /// Available audio input devices
+    var availableDevices: [AudioInputDevice] {
+        AudioRecorder.availableInputDevices()
+    }
+
+    /// Current audio level (0.0-1.0) - forwards from audioRecorder
+    var audioLevel: Float {
+        audioRecorder?.audioLevel ?? 0.0
+    }
     
     var currentTranscript: Transcript? {
         guard !transcripts.isEmpty, currentIndex >= 0, currentIndex < transcripts.count else { return nil }
@@ -73,7 +87,10 @@ class AppState: ObservableObject {
     func startRecording() {
         guard let recorder = audioRecorder, let transcript = currentTranscript else { return }
         guard let manager = transcriptManager else { return }
-        
+
+        // Set selected device ID before recording
+        recorder.selectedDeviceID = selectedDevice?.id
+
         let wavURL = manager.recordingURL(for: transcript, voiceName: voiceName)
         do {
             try recorder.startRecording(to: wavURL)
@@ -153,6 +170,9 @@ class AppState: ObservableObject {
         // Guard against re-entry from SwiftUI re-render during stop
         guard !hasReferenceRecording else { return }
         guard let recorder = audioRecorder, let manager = transcriptManager else { return }
+
+        // Set selected device ID before recording
+        recorder.selectedDeviceID = selectedDevice?.id
 
         let refURL = manager.referenceRecordingURL(voiceName: voiceName)
         do {
