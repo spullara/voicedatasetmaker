@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import AppKit
 import CoreAudio
+import Combine
 
 @MainActor
 class AppState: ObservableObject {
@@ -21,17 +22,16 @@ class AppState: ObservableObject {
     /// Currently selected audio input device
     @Published var selectedDevice: AudioInputDevice?
 
+    /// Current audio level (0.0-1.0) - forwarded from audioRecorder via Combine
+    @Published private(set) var audioLevel: Float = 0.0
+
     var transcriptManager: TranscriptManager?
     var audioRecorder: AudioRecorder?
+    private var cancellables = Set<AnyCancellable>()
 
     /// Available audio input devices
     var availableDevices: [AudioInputDevice] {
         AudioRecorder.availableInputDevices()
-    }
-
-    /// Current audio level (0.0-1.0) - forwards from audioRecorder
-    var audioLevel: Float {
-        audioRecorder?.audioLevel ?? 0.0
     }
     
     var currentTranscript: Transcript? {
@@ -55,6 +55,14 @@ class AppState: ObservableObject {
     func setupManagers(baseURL: URL) {
         transcriptManager = TranscriptManager(baseURL: baseURL)
         audioRecorder = AudioRecorder()
+
+        // Forward audio level updates from AudioRecorder to this @Published property
+        audioRecorder?.$audioLevel
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] level in
+                self?.audioLevel = level
+            }
+            .store(in: &cancellables)
     }
 
     func checkReferenceRecording() {
