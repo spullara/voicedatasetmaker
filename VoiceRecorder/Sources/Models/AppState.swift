@@ -150,6 +150,8 @@ class AppState: ObservableObject {
     // MARK: - Reference Voice Recording
 
     func startRecordingReference() {
+        // Guard against re-entry from SwiftUI re-render during stop
+        guard !hasReferenceRecording else { return }
         guard let recorder = audioRecorder, let manager = transcriptManager else { return }
 
         let refURL = manager.referenceRecordingURL(voiceName: voiceName)
@@ -165,8 +167,8 @@ class AppState: ObservableObject {
         guard let recorder = audioRecorder else { return }
 
         recorder.stopRecording()
-        isRecordingReference = false
         hasReferenceRecording = true
+        isRecordingReference = false
     }
 
     func playReferenceRecording() {

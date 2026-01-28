@@ -74,7 +74,13 @@ struct RecordingView: View {
             .disabled(appState.isRecording || appState.isPlaying)
 
             if appState.hasReferenceRecording {
-                Button(action: appState.playReferenceRecording) {
+                Button(action: {
+                    if appState.isPlaying {
+                        appState.stopPlaying()
+                    } else {
+                        appState.playReferenceRecording()
+                    }
+                }) {
                     Image(systemName: appState.isPlaying ? "stop.fill" : "play.fill")
                 }
                 .buttonStyle(.bordered)
