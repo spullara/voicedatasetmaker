@@ -32,69 +32,27 @@ class TranscriptManager {
 
         let voiceRecordingsURL = recordingsURL.appendingPathComponent(voiceName)
 
-        // Get list of existing recordings for fallback matching
-        let existingRecordings: Set<String>
-        if let recordingFiles = try? FileManager.default.contentsOfDirectory(at: voiceRecordingsURL, includingPropertiesForKeys: nil) {
-            existingRecordings = Set(recordingFiles.map { $0.lastPathComponent.lowercased() })
-        } else {
-            existingRecordings = []
-        }
-
-        return try txtFiles.enumerated().map { index, url in
+        return try txtFiles.map { url in
             let text = try String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             let filename = url.lastPathComponent
             let baseName = (filename as NSString).deletingPathExtension
 
-            // Format filename with zero-padded index (primary format)
-            let formattedName = String(format: "%03d_%@", index + 1, baseName)
-            let wavURL = voiceRecordingsURL.appendingPathComponent("\(formattedName).wav")
-            var isRecorded = FileManager.default.fileExists(atPath: wavURL.path)
-
-            // Fallback: check for recordings matching just the base name (without numbered prefix)
-            if !isRecorded {
-                let baseNameWav = "\(baseName).wav".lowercased()
-                isRecorded = existingRecordings.contains(baseNameWav)
-            }
-
-            // Fallback: check for any recording containing the base name
-            if !isRecorded {
-                let baseNameLower = baseName.lowercased()
-                isRecorded = existingRecordings.contains { $0.contains(baseNameLower) && $0.hasSuffix(".wav") }
-            }
+            // Check for recording with matching base name
+            let wavURL = voiceRecordingsURL.appendingPathComponent("\(baseName).wav")
+            let isRecorded = FileManager.default.fileExists(atPath: wavURL.path)
 
             return Transcript(filename: filename, text: text, isRecorded: isRecorded)
         }
     }
     
     func recordingURL(for transcript: Transcript, voiceName: String) -> URL {
-        guard let index = transcriptIndex(for: transcript) else {
-            // Fallback if index not found
-            let baseName = transcript.baseName
-            let formattedName = "000_\(baseName)"
-            return recordingsURL.appendingPathComponent(voiceName).appendingPathComponent("\(formattedName).wav")
-        }
-        
         let baseName = transcript.baseName
-        let formattedName = String(format: "%03d_%@", index + 1, baseName)
-        return recordingsURL.appendingPathComponent(voiceName).appendingPathComponent("\(formattedName).wav")
+        return recordingsURL.appendingPathComponent(voiceName).appendingPathComponent("\(baseName).wav")
     }
     
     func transcriptOutputURL(for transcript: Transcript, voiceName: String) -> URL {
-        guard let index = transcriptIndex(for: transcript) else {
-            let baseName = transcript.baseName
-            let formattedName = "000_\(baseName)"
-            return recordingsURL.appendingPathComponent(voiceName).appendingPathComponent("\(formattedName).txt")
-        }
-        
         let baseName = transcript.baseName
-        let formattedName = String(format: "%03d_%@", index + 1, baseName)
-        return recordingsURL.appendingPathComponent(voiceName).appendingPathComponent("\(formattedName).txt")
-    }
-    
-    private func transcriptIndex(for transcript: Transcript) -> Int? {
-        let files = try? FileManager.default.contentsOfDirectory(at: transcriptsURL, includingPropertiesForKeys: nil)
-        let txtFiles = files?.filter { $0.pathExtension.lowercased() == "txt" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        return txtFiles?.firstIndex { $0.lastPathComponent == transcript.filename }
+        return recordingsURL.appendingPathComponent(voiceName).appendingPathComponent("\(baseName).txt")
     }
     
     func copyTranscriptToRecordings(_ transcript: Transcript, voiceName: String) throws {
