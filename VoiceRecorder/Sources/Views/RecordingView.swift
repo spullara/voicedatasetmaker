@@ -1,5 +1,119 @@
 import SwiftUI
 
+// MARK: - Waveform Visualization View
+
+/// A view that displays animated vertical bars representing audio levels
+struct WaveformView: View {
+    let audioLevel: Float
+    let isActive: Bool
+    let barCount: Int
+
+    @State private var levelHistory: [Float] = []
+    @State private var animationTimer: Timer?
+
+    init(audioLevel: Float, isActive: Bool, barCount: Int = 24) {
+        self.audioLevel = audioLevel
+        self.isActive = isActive
+        self.barCount = barCount
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<barCount, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(barColor(for: index))
+                    .frame(width: 4, height: barHeight(for: index))
+                    .animation(.easeOut(duration: 0.1), value: levelHistory)
+            }
+        }
+        .frame(height: 40)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+        .cornerRadius(6)
+        .onChange(of: audioLevel) { newLevel in
+            if isActive {
+                updateLevelHistory(with: newLevel)
+            }
+        }
+        .onChange(of: isActive) { active in
+            if active {
+                startWaveformAnimation()
+            } else {
+                stopWaveformAnimation()
+            }
+        }
+        .onAppear {
+            initializeLevelHistory()
+            if isActive {
+                startWaveformAnimation()
+            }
+        }
+        .onDisappear {
+            stopWaveformAnimation()
+        }
+    }
+
+    private func initializeLevelHistory() {
+        levelHistory = Array(repeating: 0.0, count: barCount)
+    }
+
+    private func updateLevelHistory(with level: Float) {
+        var history = levelHistory
+        history.removeFirst()
+        history.append(level)
+        levelHistory = history
+    }
+
+    private func startWaveformAnimation() {
+        // Timer to shift levels even when no new audio level arrives
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
+            if isActive {
+                // Shift the history to create movement effect
+                var history = levelHistory
+                if history.count > 0 {
+                    history.removeFirst()
+                    history.append(audioLevel)
+                    Task { @MainActor in
+                        levelHistory = history
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopWaveformAnimation() {
+        animationTimer?.invalidate()
+        animationTimer = nil
+        // Reset to flat line
+        levelHistory = Array(repeating: 0.0, count: barCount)
+    }
+
+    private func barHeight(for index: Int) -> CGFloat {
+        guard index < levelHistory.count else { return 4 }
+        let level = CGFloat(levelHistory[index])
+        // Minimum height of 4, maximum of 36 (leaving padding)
+        return 4 + level * 32
+    }
+
+    private func barColor(for index: Int) -> Color {
+        guard index < levelHistory.count else { return .gray.opacity(0.3) }
+        let level = levelHistory[index]
+
+        if level > 0.8 {
+            return .red
+        } else if level > 0.5 {
+            return .orange
+        } else if level > 0.1 {
+            return .green
+        } else {
+            return .gray.opacity(0.3)
+        }
+    }
+}
+
+// MARK: - Recording View
+
 struct RecordingView: View {
     @EnvironmentObject var appState: AppState
 
@@ -10,10 +124,18 @@ struct RecordingView: View {
 
             Divider()
 
+            // Microphone picker
+            microphonePickerView
+
+            Divider()
+
             // Transcript display
             transcriptView
 
             Divider()
+
+            // Waveform visualization
+            waveformSection
 
             // Controls
             controlsView
@@ -28,6 +150,10 @@ struct RecordingView: View {
         }
         .onAppear {
             appState.checkReferenceRecording()
+            // Set default device if none selected
+            if appState.selectedDevice == nil {
+                appState.selectedDevice = appState.availableDevices.first
+            }
         }
     }
     
@@ -92,7 +218,54 @@ struct RecordingView: View {
             }
         }
     }
-    
+
+    private var microphonePickerView: some View {
+        HStack {
+            Image(systemName: "mic.fill")
+                .foregroundColor(.secondary)
+
+            Text("Microphone:")
+                .foregroundColor(.secondary)
+
+            Picker("Microphone", selection: $appState.selectedDevice) {
+                Text("System Default").tag(nil as AudioInputDevice?)
+                ForEach(appState.availableDevices) { device in
+                    Text(device.name).tag(device as AudioInputDevice?)
+                }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 300)
+
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .disabled(appState.isRecording || appState.isRecordingReference)
+    }
+
+    private var waveformSection: some View {
+        VStack(spacing: 4) {
+            if appState.isRecording || appState.isRecordingReference {
+                HStack {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 8, height: 8)
+                        .opacity(appState.isRecording || appState.isRecordingReference ? 1.0 : 0.0)
+                    Text("Recording...")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+
+            WaveformView(
+                audioLevel: appState.audioLevel,
+                isActive: appState.isRecording || appState.isRecordingReference
+            )
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+
     private var transcriptView: some View {
         VStack(spacing: 16) {
             if let transcript = appState.currentTranscript {
