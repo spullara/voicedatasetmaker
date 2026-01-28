@@ -1,0 +1,18 @@
+# Recordings (user-specific voice data)
+recordings/
+ 
+# macOS system files
+.DS_Store
+*.DS_Store
+ 
+# Swift build artifacts
+.build/
+.swiftpm/
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+ 
+# IDE
+.idea/
+*.swp
+*.swo
